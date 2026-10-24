@@ -3,10 +3,15 @@ import subprocess
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, StringConstraints
 
 from scanner import scan_wifi
-from storage import clear_measurements, save_measurement
+from storage import (
+    clear_measurements,
+    get_measurements,
+    save_measurement,
+)
 
 
 Identifier = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
@@ -20,6 +25,36 @@ class MeasurementRequest(BaseModel):
 
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/api/wifi")
+def get_wifi() -> dict[str, object]:
+    """Return the current Wi-Fi details or report a scanner failure."""
+    try:
+        result = scan_wifi()
+    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError) as error:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Wi-Fi scan failed: {error}",
+        ) from error
+
+    if "error" in result:
+        raise HTTPException(status_code=503, detail=result["error"])
+
+    return result
+
+
+@app.get("/api/measurements")
+def get_all_measurements() -> list[dict[str, object]]:
+    """Return all measurements saved on the backend."""
+    return get_measurements()
 
 
 @app.post("/api/measurements", status_code=201)
