@@ -36,10 +36,12 @@ app.add_middleware(
 
 @app.get("/api/wifi")
 def get_wifi() -> dict[str, object]:
-    """Return the current Wi-Fi details or report a scanner failure."""
     try:
+        # Calls the scanner to run netsh and get wifi data
         result = scan_wifi()
     except (OSError, RuntimeError, subprocess.SubprocessError, ValueError) as error:
+        # Catches deeper errors like Windows failing or subprocess crashing
+        # Two layers of protection — this catches thrown exceptions
         raise HTTPException(
             status_code=503,
             detail=f"Wi-Fi scan failed: {error}",
@@ -47,13 +49,14 @@ def get_wifi() -> dict[str, object]:
 
     if "error" in result:
         raise HTTPException(status_code=503, detail=result["error"])
+# if scanner returns error, send 503 to frontend
 
     return result
 
 
 @app.get("/api/measurements")
 def get_all_measurements() -> list[dict[str, object]]:
-    """Return all measurements saved on the backend."""
+    # Frontend calls this to load existing heatmap dots onto the map
     return get_measurements()
 
 
