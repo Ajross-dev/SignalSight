@@ -1,7 +1,13 @@
-import { useState } from "react";
-import type { Measurement } from "./types/measurements";
+import { useEffect, useState } from "react";
 import FloorPlan from "./components/FloorPlan";
+import type { Measurement } from "./types/measurements";
 import "./App.css";
+
+import {
+  getMeasurements,
+  recordMeasurement,
+  clearMeasurements,
+} from "./services/api";
 
 
 interface Location {
@@ -12,26 +18,59 @@ interface Location {
 function App() {
   const [location, setLocation] = useState<Location | null>(null);
   const [measurements, setMeasurements] = useState<Measurement[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  function handleRecordMeasurement() {
-    if (!location) return;
-
-    const newMeasurement: Measurement = {
-      id: crypto.randomUUID(),
-      scan_id: "demo-survey",
-      device_id: "laptop-1",
-      x: location.x,
-      y: location.y,
-      ssid: "Demo-WiFi",
-      signal: Math.floor(Math.random() * 101),
-      timestamp: new Date().toISOString(),
-    };
-    setMeasurements([...measurements, newMeasurement]);
-    setLocation(null);
-  }
+  useEffect(() => {
+    getMeasurements()
+      .then(setMeasurements)
+      .catch(() => setError("Could not load measurements from backend"));
+  }, []);
 
   function handleLocationSelect(x: number, y: number) {
     setLocation({ x, y });
+  }
+
+  async function handleRecordMeasurement() {
+    if (!location || loading) return;
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const newMeasurement = await recordMeasurement({
+        scan_id: "demo-survey",
+        device_id: "laptop-1",
+        x: location.x,
+        y: location.y,
+      });
+
+      setMeasurements((prev) => [...prev, newMeasurement]);
+      setLocation(null);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to record measurement"
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleClearMeasurements() {
+    setLoading(true);
+    setError("");
+
+    try {
+      await clearMeasurements();
+      setMeasurements([]);
+      setLocation(null);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to clear measurements"
+      );
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -45,19 +84,30 @@ function App() {
         measurements={measurements}
       />
 
-      <button
-        onClick={handleRecordMeasurement}
-        disabled={!location}
-      >
-        Record Measurement
-      </button>
-
       {location && (
         <p>
           Selected location: X = {location.x.toFixed(2)},
           Y = {location.y.toFixed(2)}
         </p>
       )}
+
+      <button
+        onClick={handleRecordMeasurement}
+        disabled={!location || loading}
+      >
+        {loading ? "Recording..." : "Record Measurement"}
+      </button>
+
+      <button
+        onClick={handleClearMeasurements}
+        disabled={loading || measurements.length === 0}
+      >
+        Clear Measurements
+      </button>
+
+      <p>Measurements recorded: {measurements.length}</p>
+
+      {error && <p style={{ color: "red" }}>{error}</p>}
     </div>
   );
 }
