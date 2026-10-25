@@ -433,6 +433,10 @@ def analyze_survey(request: AnalysisRequest) -> dict[str, object]:
         coverage,
         network_information,
     )
+
+    # Use the measured average instead of Claude's estimated score.
+    analysis["coverage_score"] = round(coverage["average_signal"])
+    
     report = save_report(
         survey_id=request.survey_id,
         floor_id=request.floor_id,

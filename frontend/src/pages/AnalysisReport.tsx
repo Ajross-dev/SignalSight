@@ -1,4 +1,5 @@
 import type { AnalysisReport as AnalysisReportData } from "../types/analysis";
+import { generateReportPdf } from "../utils/generateReportPdf";
 
 interface AnalysisReportProps {
   report: AnalysisReportData;
@@ -38,7 +39,7 @@ function AnalysisReport({ report, onBack }: AnalysisReportProps) {
       {/* Overview statistics */}
       <div className="report-stats">
         <div className="report-stat-card">
-          <span>Coverage Score</span>
+          <span>Average Signal Score</span>
           <strong>{analysis.coverage_score}/100</strong>
         </div>
 
@@ -146,12 +147,20 @@ function AnalysisReport({ report, onBack }: AnalysisReportProps) {
 
       {/* Download report */}
       <div className="report-footer">
+        <button
+          type="button"
+          className="button-primary"
+          onClick={() => generateReportPdf(report)}
+        >
+          Download PDF Report
+        </button>
+
         <a
           className="button-secondary"
           href={`/api/reports/${encodeURIComponent(report.id)}/download`}
           download
         >
-          Download Report (JSON)
+          Download JSON
         </a>
       </div>
 
