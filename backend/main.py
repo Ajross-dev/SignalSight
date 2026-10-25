@@ -10,12 +10,13 @@ from typing import Annotated
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, Field, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints, ValidationError
 
 from scanner import scan_wifi
 from storage import (
     clear_measurements,
     create_survey,
+    delete_measurement,
     get_floorplan_path,
     get_measurements,
     get_report,
@@ -66,6 +67,25 @@ class MeasurementRequest(BaseModel):
 class AnalysisRequest(BaseModel):
     survey_id: Identifier
     floor_id: str | None = None
+    router_count: int | None = Field(default=None, ge=0)
+    equipment: list[str] | None = None
+    budget: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    pain_points: list[str] | None = None
+
+
+class DeadZone(BaseModel):
+    x: float = Field(ge=0, le=1, allow_inf_nan=False)
+    y: float = Field(ge=0, le=1, allow_inf_nan=False)
+    signal: float = Field(ge=0, le=100, allow_inf_nan=False)
+    description: str
+
+
+class AnalysisResult(BaseModel):
+    coverage_score: int = Field(ge=0, le=100)
+    summary: str
+    dead_zones: list[DeadZone]
+    router_placement_suggestions: list[str]
+    equipment_recommendations: list[str]
 
 
 app = FastAPI()
@@ -177,10 +197,70 @@ def create_measurement(request: MeasurementRequest) -> dict[str, object]:
     )
 
 
-@app.delete("/api/measurements", status_code=204)
-def delete_measurements() -> None:
-    """Delete all saved measurements."""
-    clear_measurements()
+@app.delete("/api/measurements/{measurement_id}", status_code=204)
+def delete_one_measurement(measurement_id: str) -> None:
+    """Delete a single measurement by its ID."""
+    if not delete_measurement(measurement_id):
+        raise HTTPException(status_code=404, detail="Measurement not found")
+
+
+@app.delete("/api/surveys/{survey_id}/floors/{floor_id}/measurements")
+def delete_floor_measurements(survey_id: str, floor_id: str) -> dict[str, int]:
+    """Delete all measurements for one floor in a survey."""
+    survey = get_survey(survey_id)
+    if survey is None:
+        raise HTTPException(status_code=404, detail="Survey not found")
+    if not any(
+        isinstance(floor, dict) and floor.get("id") == floor_id
+        for floor in survey.get("floors", [])
+    ):
+        raise HTTPException(status_code=404, detail="Floor not found in the survey")
+
+    return {
+        "deleted_count": clear_measurements(
+            survey_id=survey_id,
+            floor_id=floor_id,
+        )
+    }
+
+
+@app.delete("/api/measurements")
+def delete_measurements(
+    survey_id: str | None = None,
+    floor_id: str | None = None,
+    all: bool = False,
+) -> dict[str, int]:
+    """Delete measurements for one survey/floor, or all only when explicitly requested."""
+    if all and (survey_id is not None or floor_id is not None):
+        raise HTTPException(
+            status_code=422,
+            detail="all=true cannot be combined with survey_id or floor_id",
+        )
+    if not all and survey_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="survey_id is required; use all=true to explicitly clear all measurements",
+        )
+    if floor_id is not None and survey_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="survey_id is required when floor_id is provided",
+        )
+    if survey_id is not None:
+        survey = get_survey(survey_id)
+        if survey is None:
+            raise HTTPException(status_code=404, detail="Survey not found")
+        if floor_id is not None and not any(
+            isinstance(floor, dict) and floor.get("id") == floor_id
+            for floor in survey.get("floors", [])
+        ):
+            raise HTTPException(status_code=404, detail="Floor not found in the survey")
+    return {
+        "deleted_count": clear_measurements(
+            survey_id=survey_id,
+            floor_id=floor_id,
+        )
+    }
 
 
 @app.post("/api/surveys", status_code=201)
@@ -305,12 +385,39 @@ def analyze_survey(request: AnalysisRequest) -> dict[str, object]:
             for measurement in valid_measurements
         ],
     }
-    report_text = _request_claude_analysis(survey, request.floor_id, coverage)
+    network_information = {
+        "router_count": (
+            request.router_count
+            if request.router_count is not None
+            else survey.get("router_count")
+        ),
+        "equipment": (
+            request.equipment
+            if request.equipment is not None
+            else survey.get("equipment")
+        ),
+        "budget": (
+            request.budget
+            if "budget" in request.model_fields_set
+            else survey.get("budget")
+        ),
+        "pain_points": (
+            request.pain_points
+            if request.pain_points is not None
+            else survey.get("pain_points")
+        ),
+    }
+    analysis = _request_claude_analysis(
+        survey,
+        request.floor_id,
+        coverage,
+        network_information,
+    )
     report = save_report(
         survey_id=request.survey_id,
         floor_id=request.floor_id,
         coverage=coverage,
-        analysis=report_text,
+        analysis=analysis,
     )
     return report
 
@@ -355,7 +462,8 @@ def _request_claude_analysis(
     survey: dict[str, object],
     floor_id: str | None,
     coverage: dict[str, object],
-) -> str:
+    network_information: dict[str, object],
+) -> dict[str, object]:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
         raise HTTPException(
@@ -367,11 +475,8 @@ def _request_claude_analysis(
         "survey": {
             "building_name": survey.get("building_name"),
             "address": survey.get("address"),
-            "router_count": survey.get("router_count"),
-            "equipment": survey.get("equipment"),
-            "budget": survey.get("budget"),
-            "pain_points": survey.get("pain_points"),
         },
+        "network_information": network_information,
         "floor_id": floor_id,
         "coverage": coverage,
     }
@@ -383,9 +488,15 @@ def _request_claude_analysis(
             "max_tokens": 1200,
             "system": (
                 "You are a Wi-Fi coverage analyst. Base recommendations only on "
-                "the supplied measurements and survey details. Explain limitations, "
+                "the supplied measurements and network details. Explain limitations, "
                 "prioritize practical changes within budget, and do not invent "
-                "measurements or equipment capabilities."
+                "measurements or equipment capabilities. Return only a JSON object "
+                "with exactly these keys: coverage_score (integer 0-100), summary "
+                "(string), dead_zones (array of objects with normalized x and y "
+                "coordinates from 0 to 1, signal from 0 to 100, and description), "
+                "router_placement_suggestions (array of strings), and "
+                "equipment_recommendations (array of strings). Only report dead "
+                "zones at positions present in the supplied measurements."
             ),
             "messages": [
                 {
@@ -446,4 +557,10 @@ def _request_claude_analysis(
             status_code=502,
             detail="AI analysis provider returned no report text",
         )
-    return text
+    try:
+        return AnalysisResult.model_validate_json(text).model_dump()
+    except (ValidationError, ValueError) as error:
+        raise HTTPException(
+            status_code=502,
+            detail="AI analysis provider returned an invalid structured report",
+        ) from error

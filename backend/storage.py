@@ -84,10 +84,49 @@ def save_measurement(
     return measurement
 
 
-def clear_measurements() -> None:
-    """Remove all saved measurements."""
+def delete_measurement(measurement_id: str) -> bool:
+    """Remove one saved measurement, returning whether it existed."""
     with _storage_lock:
-        _write_measurements([])
+        measurements = _read_measurements()
+        remaining = [
+            measurement
+            for measurement in measurements
+            if measurement.get("id") != measurement_id
+        ]
+        if len(remaining) == len(measurements):
+            return False
+        _write_measurements(remaining)
+        return True
+
+
+def clear_measurements(
+    survey_id: str | None = None,
+    floor_id: str | None = None,
+) -> int:
+    """Remove measurements matching the supplied survey and optional floor."""
+    if floor_id is not None and survey_id is None:
+        raise ValueError("survey_id is required when floor_id is provided")
+
+    with _storage_lock:
+        measurements = _read_measurements()
+        if survey_id is None:
+            remaining: list[dict[str, object]] = []
+        else:
+            remaining = [
+                measurement
+                for measurement in measurements
+                if not (
+                    measurement.get("survey_id") == survey_id
+                    and (
+                        floor_id is None
+                        or measurement.get("floor_id") == floor_id
+                    )
+                )
+            ]
+        deleted_count = len(measurements) - len(remaining)
+        if deleted_count:
+            _write_measurements(remaining)
+        return deleted_count
 
 
 def save_floorplan(
@@ -201,7 +240,7 @@ def save_report(
     survey_id: str,
     floor_id: str | None,
     coverage: dict[str, object],
-    analysis: str,
+    analysis: dict[str, object],
 ) -> dict[str, object]:
     """Persist a generated survey analysis as a JSON report."""
     report: dict[str, object] = {
