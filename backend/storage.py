@@ -236,6 +236,39 @@ def get_survey(survey_id: str) -> dict[str, object] | None:
         )
 
 
+
+def delete_survey(survey_id: str) -> bool:
+    """Delete a survey and its measurements and reports."""
+    with _storage_lock:
+        surveys = _read_json_list(SURVEYS_FILE, "surveys")
+
+        remaining = [
+            survey for survey in surveys
+            if survey.get("id") != survey_id
+        ]
+
+        if len(remaining) == len(surveys):
+            return False
+
+        # Remove the survey.
+        _write_json_atomic(SURVEYS_FILE, remaining)
+
+        # Remove its Wi-Fi measurements.
+        measurements = _read_measurements()
+        remaining_measurements = [
+            measurement for measurement in measurements
+            if measurement.get("survey_id") != survey_id
+        ]
+        _write_measurements(remaining_measurements)
+
+        # Remove its AI reports.
+        if REPORTS_DIR.exists():
+            for path in REPORTS_DIR.glob("*.json"):
+                report = _read_json_object(path)
+                if report.get("survey_id") == survey_id:
+                    path.unlink()
+        return True
+
 def save_report(
     survey_id: str,
     floor_id: str | None,

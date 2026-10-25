@@ -1,6 +1,7 @@
+
 import { useEffect, useState } from "react";
 
-import { getSurveys }  from "../services/api";
+import { getSurveys } from "../services/api";
 import type { Survey } from "../types/survey";
 
 interface SavedSurveysProps {
@@ -15,6 +16,7 @@ function SavedSurveys({
   const [surveys, setSurveys] = useState<Survey[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Load all saved surveys when this page opens.
   useEffect(() => {
@@ -31,6 +33,39 @@ function SavedSurveys({
 
     loadSurveys();
   }, []);
+
+  // Delete a survey after confirmation.
+  async function handleDeleteSurvey(surveyId: string) {
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this survey? This cannot be undone."
+    );
+
+    if (!confirmed) return;
+
+    setDeletingId(surveyId);
+    setError("");
+
+    try {
+      const response = await fetch(
+        `/api/surveys/${encodeURIComponent(surveyId)}`,
+        { method: "DELETE" }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to delete survey.");
+      }
+
+      // Remove the deleted survey from the list.
+      setSurveys((previous) =>
+        previous.filter((survey) => survey.id !== surveyId)
+      );
+    } catch (error) {
+      console.error(error);
+      setError("Could not delete the survey. Please try again.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   return (
     <div className="saved-surveys-page">
@@ -64,7 +99,7 @@ function SavedSurveys({
         </div>
       )}
 
-      {!loading && !error && surveys.length === 0 && (
+      {!loading && surveys.length === 0 && !error && (
         <div className="empty-surveys">
           <h3>No Saved Surveys Yet</h3>
           <p>
@@ -80,7 +115,7 @@ function SavedSurveys({
         </div>
       )}
 
-      {!loading && !error && surveys.length > 0 && (
+      {!loading && surveys.length > 0 && (
         <div className="saved-surveys-grid">
           {surveys.map((survey) => (
             <div className="saved-survey-card" key={survey.id}>
@@ -112,12 +147,32 @@ function SavedSurveys({
                 </span>
               </div>
 
-              <button
-                className="button-primary"
-                onClick={() => onOpenSurvey(survey)}
+              <div
+                style={{
+                  display: "flex",
+                  gap: "10px",
+                  flexWrap: "wrap",
+                }}
               >
-                Open Survey
-              </button>
+                <button
+                  className="button-primary"
+                  onClick={() => onOpenSurvey(survey)}
+                  disabled={deletingId === survey.id}
+                >
+                  Open Survey
+                </button>
+
+                <button
+                  className="button-secondary"
+                  style={{ color: "#dc2626" }}
+                  onClick={() => handleDeleteSurvey(survey.id)}
+                  disabled={deletingId !== null}
+                >
+                  {deletingId === survey.id
+                    ? "Deleting..."
+                    : "Delete"}
+                </button>
+              </div>
             </div>
           ))}
         </div>

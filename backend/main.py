@@ -27,6 +27,7 @@ from storage import (
     save_floorplan,
     save_measurement,
     save_report,
+    delete_survey,
 )
 
 load_dotenv()
@@ -325,6 +326,16 @@ def read_survey(survey_id: str) -> dict[str, object]:
     if survey is None:
         raise HTTPException(status_code=404, detail="Survey not found")
     return survey
+
+
+@app.delete("/api/surveys/{survey_id}", status_code=204)
+def delete_survey_endpoint(survey_id: str) -> None:
+    """Delete a saved survey."""
+    if not delete_survey(survey_id):
+        raise HTTPException(
+            status_code=404,
+            detail="Survey not found",
+        )
 
 
 @app.get("/api/floorplans/{filename}")
