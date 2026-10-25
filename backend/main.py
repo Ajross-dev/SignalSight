@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 from typing import Annotated
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -27,6 +28,8 @@ from storage import (
     save_measurement,
     save_report,
 )
+
+load_dotenv()
 
 
 Identifier = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
