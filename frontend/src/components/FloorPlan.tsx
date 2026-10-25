@@ -1,4 +1,3 @@
-
 import type { MouseEvent } from "react";
 import type { Measurement } from "../types/measurements";
 import Heatmap from "./HeatMap";

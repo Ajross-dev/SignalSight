@@ -7,9 +7,11 @@ export interface Measurement {
   ssid: string;
   signal: number;
   timestamp: string;
+  survey_id?: string;
+  floor_id?: string;
 }
 
 export type MeasurementRequest = Pick<
   Measurement,
-  "scan_id" | "device_id" | "x" | "y"
+  "scan_id" | "device_id" | "x" | "y" | "survey_id" | "floor_id"
 >;
