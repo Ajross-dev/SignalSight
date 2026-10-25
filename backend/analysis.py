@@ -1,6 +1,7 @@
 import os
 from anthropic import Anthropic
 from dotenv import load_dotenv
+import json
 
 # Load the API key from the .env file
 load_dotenv()
@@ -38,12 +39,26 @@ Please provide:
 5. Equipment recommendations within their budget
 6. A summary a non-technical person can understand
 
-Be specific and actionable. Reference actual coordinates from the measurements."""
+Be specific and actionable. Reference actual coordinates from the measurements.
 
+Return your response as a JSON object with exactly these fields:
+{{
+    "coverage_score": <number 0-100>,
+    "summary": "<plain english summary a non-technical person can understand>",
+    "dead_zones": [
+        {{"x": <float>, "y": <float>, "signal": <int>, "severity": "<critical|moderate>"}}
+    ],
+    "router_recommendations": [
+        {{"x": <float>, "y": <float>, "reason": "<why place router here>"}}
+    ],
+    "equipment_recommendations": "<text advice within their budget>"
+}}
+
+Return only the JSON object, no extra text, no markdown, no backticks."""
         # Send the prompt to Claude and get a response
         message = client.messages.create(
             model="claude-sonnet-4-6",      # Current Claude model in use
-            max_tokens=1024,                 # Maximum length of the response
+            max_tokens=2048,                 # Maximum length of the response
             messages=[
                 {"role": "user", "content": prompt}
             ]
@@ -52,13 +67,15 @@ Be specific and actionable. Reference actual coordinates from the measurements."
         # Pull the text out of Claude's response
         response_text = message.content[0].text
 
-        # Return the analysis as a clean dictionary
+        # Parse Claude's JSON response into a Python dictionary
+        response_data = json.loads(response_text)
+
+        # Return the structured analysis
         return {
-            "analysis": response_text,
+            "analysis": response_data,
             "measurement_count": len(measurements),
             "network_info": network_info
         }
-
     # If anything goes wrong calling Claude, catch it and return an error
     except Exception as e:
         return {
