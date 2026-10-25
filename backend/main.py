@@ -373,6 +373,12 @@ def analyze_survey(request: AnalysisRequest) -> dict[str, object]:
             )
         )
     ]
+    if not valid_measurements:
+        raise HTTPException(
+            status_code=422,
+            detail="At least one valid Wi-Fi measurement is required for analysis",
+        )
+
     signals = [measurement["signal"] for measurement in valid_measurements]
     coverage = {
         "measurement_count": len(signals),
@@ -488,7 +494,7 @@ def _request_claude_analysis(
             "model": os.environ.get(
                 "ANTHROPIC_MODEL", "claude-sonnet-4-20250514"
             ),
-            "max_tokens": 1200,
+            "max_tokens": 2048,
             "system": (
                 "You are a Wi-Fi coverage analyst. Base recommendations only on "
                 "the supplied measurements and network details. Explain limitations, "
