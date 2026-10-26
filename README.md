@@ -112,12 +112,6 @@ Team
 
 Built at the Ohio State University Hackathon by:
 
-Roba Abdeta — Backend (scanner.py, analysis.py) | Kent State University CS '28
-[Teammate 2 Name] — Backend (storage.py, main.py)
-[Teammate 3 Name] — Frontend (React, heatmap, UI)
-Future Ideas
-Mac and Linux support
-Multi-building campus dashboard
-Automatic router placement markers on the heatmap
-PDF report export
-Live WebSocket updates
+Roba Abdeta — Backend 
+Shagai Herdman — Backend 
+Anthony Ross — Frontend
